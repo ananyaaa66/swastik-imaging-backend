@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: swastik-postgres
+    environment:
+      POSTGRES_USER: swastik_user
+      POSTGRES_PASSWORD: swastik_password
+      POSTGRES_DB: swastik_imaging_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - swastik-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swastik_user -d swastik_imaging_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Backend API
+  backend:
+    build: .
+    container_name: swastik-backend
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://swastik_user:swastik_password@postgres:5432/swastik_imaging_db?schema=public
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
+      JWT_EXPIRE: 7d
+      EMAIL_HOST: smtp.gmail.com
+      EMAIL_PORT: 587
+      EMAIL_SECURE: false
+      EMAIL_USER: your-email@gmail.com
+      EMAIL_PASS: your-app-password
+      EMAIL_FROM: "Swastik Imaging & Diagnostics <noreply@swastikimaginganddiagnostics.com>"
+      FRONTEND_URL: http://localhost:5173
+      BUSINESS_NAME: "Swastik Imaging & Diagnostics"
+      BUSINESS_PHONE: "+91-7303034849"
+      BUSINESS_EMAIL: "swastikimaginganddiagnostics@gmail.com"
+      BUSINESS_ADDRESS: "26/3, Ground Floor, Old Rajinder Nagar, New Delhi-110060"
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - swastik-network
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: swastik-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - swastik-network
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  swastik-network:
+    driver: bridge
